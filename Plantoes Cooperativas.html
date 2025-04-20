@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Registro de Plantões Médicos</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f5f7fa;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    input[type="date"], input[type="text"], button {
+      padding: 8px 12px;
+      font-size: 1rem;
+    }
+    input[type="text"] {
+      width: 220px;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 800px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background-color: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background-color: #e9ecef;
+    }
+    td:nth-child(4), th:nth-child(4) {
+      width: 140px;
+    }
+    .output {
+      background-color: #ffffff;
+      padding: 15px;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      position: relative;
+    }
+    .output-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    textarea {
+      width: 100%;
+      height: 300px;
+      margin-top: 10px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 0.95rem;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body>
+  <h1>Registro de Plantões Médicos</h1>
+
+  <div class="controls">
+    Médico: <input type="text" id="medico" placeholder="Nome do médico" />
+    Mês Base: <input type="date" id="startDate" />
+    <button onclick="generateTable()">Gerar Tabela</button>
+    <button onclick="clearAll()" style="background-color:#dc3545;">Limpar Tudo</button>
+  </div>
+
+  <div class="container">
+    <div>
+      <table id="mainTable">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Dia da Semana</th>
+            <th>Feriado</th>
+            <th>Turnos</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="output">
+      <div class="output-header">
+        <button onclick="saveAll()">Salvar Todos</button>
+        <button onclick="copyToClipboard()">Copiar Produção Editada</button>
+      </div>
+      <textarea id="dailyOutput"></textarea>
+    </div>
+  </div>
+
+  <script>
+    let shiftsData = [];
+    let medicoNome = '';
+    let faixaDatas = '';
+
+    function generateTable() {
+      const nomeInput = document.getElementById('medico');
+      const startInput = document.getElementById('startDate');
+      const baseDate = startInput.value ? new Date(startInput.value) : new Date();
+
+      const start = new Date(baseDate.getFullYear(), baseDate.getMonth(), 21);
+      const end = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 20);
+
+      startInput.valueAsDate = start;
+
+      const tableBody = document.getElementById('tableBody');
+      tableBody.innerHTML = '';
+      shiftsData = [];
+
+      medicoNome = nomeInput.value.trim();
+      const formatDate = d => d.toLocaleDateString('pt-BR');
+      faixaDatas = `Produção${medicoNome ? ' de ' + medicoNome : ''} de ${formatDate(start)} a ${formatDate(end)}`;
+
+      for (let d = new Date(start.getTime()); d <= end; d.setDate(d.getDate() + 1)) {
+        const row = document.createElement('tr');
+        const dateStr = formatDate(d);
+        const day = d.toLocaleDateString('pt-BR', { weekday: 'long' }).toLowerCase();
+
+        row.innerHTML = `
+          <td>${dateStr}</td>
+          <td>${day.charAt(0).toUpperCase() + day.slice(1)}</td>
+          <td><input type="checkbox" class="feriadoCheck"></td>
+          <td>
+            <label><input type="checkbox" value="M" />M</label>
+            <label><input type="checkbox" value="T" />T</label>
+            <label><input type="checkbox" value="N" class="nightCheck" />N</label>
+          </td>
+        `;
+
+        const nightCheckbox = row.querySelector('.nightCheck');
+        const holidayCheckbox = row.querySelector('.feriadoCheck');
+
+        const updateRowColor = () => {
+          const isNight = nightCheckbox.checked;
+          const isFeriado = holidayCheckbox.checked;
+          const isWeekendNight = ['sexta-feira', 'sábado', 'domingo'].includes(day);
+
+          if (isNight && (isWeekendNight || isFeriado)) {
+            row.style.backgroundColor = '#cce5ff';
+          } else {
+            row.style.backgroundColor = '';
+          }
+        };
+
+        nightCheckbox.addEventListener('change', updateRowColor);
+        holidayCheckbox.addEventListener('change', updateRowColor);
+
+        tableBody.appendChild(row);
+      }
+    }
+
+    function saveAll() {
+      const rows = document.querySelectorAll('#mainTable tbody tr');
+      shiftsData = [];
+
+      rows.forEach(row => {
+        const [dateCell, dayCell, holidayCell, shiftCell] = row.cells;
+        const shiftValue = Array.from(shiftCell.querySelectorAll('input[type=checkbox]'))
+                                .filter(cb => cb.checked)
+                                .map(cb => cb.value)
+                                .join('');
+        if (shiftValue.trim() !== '') {
+          const entry = {
+            date: formatDateShort(dateCell.textContent),
+            day: dayCell.textContent,
+            isHoliday: holidayCell.querySelector('input').checked,
+            shifts: shiftValue,
+            hours: [...shiftValue].reduce((acc, s) => acc + ({ M: 6, T: 6, N: 12 }[s] || 0), 0)
+          };
+          shiftsData.push(entry);
+        }
+      });
+      updateOutputs();
+    }
+
+    function updateOutputs() {
+      const dayAbbr = {
+        'Segunda-feira': 'Seg',
+        'Terça-feira': 'Ter',
+        'Quarta-feira': 'Qua',
+        'Quinta-feira': 'Qui',
+        'Sexta-feira': 'Sex',
+        'Sábado': 'Sab',
+        'Domingo': 'Dom'
+      };
+
+      const totals = {
+        dayShift: 0,
+        nightShift: 0,
+        weekendDay: 0,
+        weekendNight: 0,
+        holidayDay: 0,
+        holidayNight: 0
+      };
+
+      const lines = shiftsData.map(e => {
+        const abbr = dayAbbr[e.day] || e.day;
+        const shiftPad = e.shifts.padEnd(5, ' ');
+        const line = `${e.date} | ${abbr} | ${shiftPad}| ${e.hours}h${e.isHoliday ? ' (Feriado)' : ''}`;
+
+        if (e.isHoliday) {
+          if (e.shifts.includes('M')) totals.holidayDay += 6;
+          if (e.shifts.includes('T')) totals.holidayDay += 6;
+          if (e.shifts.includes('N')) totals.holidayNight += 12;
+        } else if (['Sábado', 'Domingo'].includes(e.day) ||
+                  (e.day === 'Sexta-feira' && e.shifts.includes('N'))) {
+          if (e.shifts.includes('M')) totals.weekendDay += 6;
+          if (e.shifts.includes('T')) totals.weekendDay += 6;
+          if (e.shifts.includes('N')) totals.weekendNight += 12;
+        } else {
+          if (e.shifts.includes('M')) totals.dayShift += 6;
+          if (e.shifts.includes('T')) totals.dayShift += 6;
+          if (e.shifts.includes('N') &&
+              ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira'].includes(e.day)) {
+            totals.nightShift += 12;
+          }
+        }
+
+        return line;
+      });
+
+      lines.unshift(faixaDatas);
+      lines.push('');
+      lines.push('--- Totalização ---');
+      lines.push(`1. Dias Úteis Diurnos (Seg-Sex): ${totals.dayShift}h`);
+      lines.push(`2. Dias Úteis Noturnos (Seg-Qui): ${totals.nightShift}h`);
+      lines.push(`3. Finais de Semana Diurnos: ${totals.weekendDay}h`);
+      lines.push(`4. Finais de Semana Noturnos: ${totals.weekendNight}h`);
+      lines.push(`5. Feriados Diurnos: ${totals.holidayDay}h`);
+      lines.push(`6. Feriados Noturnos: ${totals.holidayNight}h`);
+
+      document.getElementById('dailyOutput').value = lines.join('\n');
+    }
+
+    function copyToClipboard() {
+      const textarea = document.getElementById('dailyOutput');
+      textarea.select();
+      document.execCommand('copy');
+      alert('Produção copiada para a área de transferência!');
+    }
+
+    function formatDateShort(dateStr) {
+      const parts = dateStr.split('/');
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}`;
+    }
+
+    function clearAll() {
+      document.getElementById('medico').value = '';
+      document.getElementById('startDate').value = '';
+      document.getElementById('tableBody').innerHTML = '';
+      document.getElementById('dailyOutput').value = '';
+      shiftsData = [];
+    }
+  </script>
+</body>
+</html>
